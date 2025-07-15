@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cluster-Chaos: The Director's Cut</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        .card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-10px) scale(1.03);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        }
+        .card.selected {
+            transform: translateY(-15px) scale(1.05);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.7);
+            border-color: #3B82F6;
+        }
+        .board-spoke.available:hover {
+            background-color: rgba(59, 130, 246, 0.3);
+            border-color: #3B82F6;
+        }
+        .player-target.available:hover {
+            outline: 2px solid #F87171;
+            cursor: pointer;
+        }
+        .cluster-pawn {
+            transition: all 0.3s ease;
+        }
+        .log-message {
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Custom scrollbar for message log */
+        #message-log::-webkit-scrollbar {
+            width: 8px;
+        }
+        #message-log::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        #message-log::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 4px;
+        }
+        #message-log::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex flex-col h-screen antialiased">
+
+    <!-- Game Header -->
+    <header class="bg-gray-800/50 backdrop-blur-sm p-3 text-center z-10 shadow-lg">
+        <h1 class="text-2xl font-bold text-white tracking-wider">Cluster-Chaos: The Director's Cut</h1>
+        <p class="text-sm text-gray-400">"You wanted a single pane of glass. Instead, you got a world of pain... and glass."</p>
+    </header>
+
+    <!-- Main Game Area -->
+    <main class="flex-grow flex p-4 gap-4 overflow-hidden">
+
+        <!-- Left Panel: Player Info -->
+        <div id="players-panel" class="w-1/5 bg-gray-800/50 rounded-lg p-4 flex flex-col gap-4 overflow-y-auto">
+            <!-- Player info will be dynamically inserted here -->
+        </div>
+
+        <!-- Center Panel: Board and Log -->
+        <div class="w-3/5 flex flex-col gap-4">
+            <!-- Game Board -->
+            <div id="game-board-container" class="flex-grow bg-gray-800/50 rounded-lg p-6 relative flex items-center justify-center">
+                <div id="game-board" class="w-full h-full relative">
+                    <!-- Hub -->
+                    <div id="hub" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-gray-700/50 rounded-full flex flex-col items-center justify-center border-2 border-gray-600 shadow-2xl">
+                        <h2 class="text-xl font-bold">HUB</h2>
+                        <div id="hub-pawns" class="flex flex-wrap gap-2 mt-2"></div>
+                    </div>
+                    <!-- Spokes -->
+                    <!-- Spoke positions will be calculated by JS -->
+                </div>
+            </div>
+            <!-- Message Log -->
+            <div class="h-48 bg-gray-800/50 rounded-lg p-4 flex flex-col">
+                <h3 class="text-lg font-semibold mb-2 text-white">Game Log</h3>
+                <div id="message-log" class="flex-grow overflow-y-auto pr-2"></div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Current Player's Hand and Actions -->
+        <div class="w-1/5 flex flex-col gap-4">
+            <div id="deck-panel" class="h-1/3 bg-gray-800/50 rounded-lg p-4 flex flex-col items-center justify-center gap-4">
+                <div id="fleet-deck" class="w-32 h-44 bg-blue-900/50 border-2 border-blue-400 rounded-lg flex flex-col items-center justify-center cursor-pointer shadow-lg">
+                    <p class="font-bold text-lg">Fleet Deck</p>
+                    <p id="deck-count" class="text-sm"></p>
+                </div>
+                <div id="skill-tokens-supply" class="flex gap-2">
+                    <!-- Skill tokens will be dynamically inserted here -->
+                </div>
+            </div>
+            <div id="hand-panel" class="flex-grow bg-gray-800/50 rounded-lg p-4 flex flex-col">
+                <h3 class="text-lg font-semibold mb-2 text-white">Your Hand</h3>
+                <div id="player-hand" class="flex-grow grid grid-cols-1 gap-2 overflow-y-auto">
+                    <!-- Cards in hand will be dynamically inserted here -->
+                </div>
+            </div>
+            <div id="actions-panel" class="bg-gray-800/50 rounded-lg p-4">
+                 <h3 class="text-lg font-semibold mb-2 text-white">Actions</h3>
+                 <div id="action-buttons" class="grid grid-cols-2 gap-2">
+                    <button id="play-card-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition w-full disabled:bg-gray-600 disabled:cursor-not-allowed">Play Card</button>
+                    <button id="deploy-app-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition w-full disabled:bg-gray-600 disabled:cursor-not-allowed">Deploy App (3 CU)</button>
+                    <button id="move-pawn-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded transition w-full disabled:bg-gray-600 disabled:cursor-not-allowed">Move (1 CU)</button>
+                    <button id="discard-draw-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition w-full disabled:bg-gray-600 disabled:cursor-not-allowed">Discard/Draw</button>
+                    <button id="end-turn-btn" class="col-span-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded transition w-full disabled:bg-gray-600 disabled:cursor-not-allowed">End Turn</button>
+                 </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <!-- Setup Modal -->
+    <div id="setup-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-2xl text-center">
+            <h2 class="text-3xl font-bold mb-4">Welcome to Cluster-Chaos!</h2>
+            <p class="mb-6">How many players will be taming the chaos today?</p>
+            <div class="flex justify-center gap-4">
+                <button onclick="setupGame(2)" class="text-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded transition">2 Players</button>
+                <button onclick="setupGame(3)" class="text-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded transition">3 Players</button>
+                <button onclick="setupGame(4)" class="text-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded transition">4 Players</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Event Modal -->
+    <div id="event-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div id="event-card-display" class="bg-gray-800 p-8 rounded-lg shadow-2xl text-center max-w-md border-4 border-yellow-400">
+            <h2 class="text-3xl font-bold mb-4 text-yellow-300">EVENT!</h2>
+            <h3 id="event-title" class="text-2xl font-semibold mb-4"></h3>
+            <p id="event-text" class="mb-6 text-lg"></p>
+            <button onclick="closeEventModal()" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded transition">Continue</button>
+        </div>
+    </div>
+    
+    <!-- Win Modal -->
+    <div id="win-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="bg-gradient-to-br from-green-600 to-blue-600 p-10 rounded-lg shadow-2xl text-center text-white">
+            <h2 class="text-5xl font-extrabold mb-4">VICTORY!</h2>
+            <p id="winner-name" class="text-3xl font-semibold mb-6"></p>
+            <p class="text-xl mb-8">You have been crowned the Supreme Cluster Commander!</p>
+            <button onclick="window.location.reload()" class="bg-white text-gray-800 font-bold py-3 px-8 rounded-full transition hover:bg-gray-200 text-lg">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // --- DOM Elements ---
+        const DOMElements = {
+            playersPanel: document.getElementById('players-panel'),
+            gameBoard: document.getElementById('game-board'),
+            hub: document.getElementById('hub'),
+            hubPawns: document.getElementById('hub-pawns'),
+            messageLog: document.getElementById('message-log'),
+            deckCount: document.getElementById('deck-count'),
+            skillTokensSupply: document.getElementById('skill-tokens-supply'),
+            playerHand: document.getElementById('player-hand'),
+            playCardBtn: document.getElementById('play-card-btn'),
+            deployAppBtn: document.getElementById('deploy-app-btn'),
+            movePawnBtn: document.getElementById('move-pawn-btn'),
+            discardDrawBtn: document.getElementById('discard-draw-btn'),
+            endTurnBtn: document.getElementById('end-turn-btn'),
+            setupModal: document.getElementById('setup-modal'),
+            eventModal: document.getElementById('event-modal'),
+            eventTitle: document.getElementById('event-title'),
+            eventText: document.getElementById('event-text'),
+            winModal: document.getElementById('win-modal'),
+            winnerName: document.getElementById('winner-name'),
+        };
+
+        // --- Game Data ---
+        const CARDS = {
+            APPLICATIONS: [
+                { id: 'app1', name: 'Customer-Facing Portal', vp: 1, text: 'Deploy to a Public Cloud Cluster. Once deployed, gain +1 CU during your Resource Generation phase.', requirement: 'Public Cloud' },
+                { id: 'app2', name: 'Factory Floor Analytics', vp: 1, text: 'Deploy to an Edge Cluster. Once deployed, you may look at the top card of the Fleet Deck at any time.', requirement: 'Edge' },
+                { id: 'app3', name: 'Core Banking Ledger', vp: 1, text: 'Deploy to an On-Prem Cluster. Once deployed, Problem cards played against you cost their player +1 CU.', requirement: 'On-Prem' },
+                { id: 'app4', name: 'R&D Data Lake', vp: 1, text: 'Deploy to any cluster type. Once deployed, you may hold one extra card in your hand above the limit.', requirement: 'any' },
+            ],
+            GOVERNANCE: [
+                { id: 'gov1', name: 'My Governance Policy', text: 'At the end of your turn, you must have at least 2 CUs in reserve. If you don\'t, discard one card from your hand.' },
+            ],
+            FLEET: {
+                CLUSTERS: [
+                    { id: 'c1', name: 'On-Prem OpenShift Cluster', type: 'On-Prem', cost: 4, requires: { type: 'skillOrDiscard', skill: 'SRE Team' }, generates: 2, count: 3 },
+                    { id: 'c2', name: 'Public Cloud Cluster', type: 'Public Cloud', cost: 2, generates: 1, vulnerability: 'Major Cloud Outage', count: 5 },
+                    { id: 'c3', name: 'Edge Cluster', type: 'Edge', cost: 1, requires: { type: 'skill', skill: 'Network Engineer' }, generates: 1, vulnerability: 'Network Outage', count: 4 },
+                ],
+                ACTIONS: [
+                    { id: 'a1', name: 'Provision Cluster', cost: 1, text: 'Play a Cluster Card from your hand, ignoring its CU cost (must still meet other requirements).', count: 2 },
+                    { id: 'a2', name: 'GitOps Rollout', cost: 2, text: 'Deploy an Application Card from your hand to a valid, controlled cluster.', count: 3 },
+                    { id: 'a3', name: 'Fleet Observability', cost: 1, text: 'Look at another player\'s hand.', count: 2 },
+                    { id: 'a4', name: 'Hire Specialist', cost: 3, text: 'Take an "SRE Team" or "Network Engineer" token from the supply.', count: 3 },
+                    { id: 'a5', name: 'Disaster Recovery', cost: 3, text: 'If one of your clusters was just destroyed, play this to immediately save it.', count: 2 },
+                    { id: 'a6', name: 'Scale Up', cost: 0, text: 'Gain 3 CUs.', count: 3 },
+                ],
+                PROBLEMS: [
+                    { id: 'p1', name: 'Configuration Drift!', text: 'Play when an opponent attempts a GitOps Rollout. Their action fails and their CUs are spent.', count: 3 },
+                    { id: 'p2', name: 'Security Vulnerability!', text: 'Play on an opponent\'s turn. They must pay 2 CUs or one of their controlled clusters is destroyed.', count: 3 },
+                    { id: 'p3', name: 'Expired Certs!', text: 'Cancel another player\'s Action card.', count: 2 },
+                    { id: 'p4', name: 'Network Outage!', text: 'Choose one of an opponent\'s clusters. It produces no CUs during their next turn.', count: 2 },
+                    { id: 'p5', name: 'Bad Merge to Main!', text: 'Play when an opponent attempts a GitOps Rollout. Their action fails, and they must return the Application Card to their hand.', count: 2 },
+                ],
+                EVENTS: [
+                    { id: 'e1', name: 'Major Cloud Outage!', text: 'All Public Cloud clusters are destroyed. Owners must remove their pawns.', count: 2 },
+                    { id: 'e2', name: 'Zero-Day Exploit!', text: 'Each player must pay 1 CU for each cluster they control or destroy it.', count: 2 },
+                    { id: 'e3', name: 'Budget Surplus!', text: 'All players immediately gain 2 CUs.', count: 2 },
+                ]
+            }
+        };
+
+        const BOARD_SPOKES = [
+            { id: 'spoke1', name: 'On-Prem Datacenter', type: 'On-Prem' },
+            { id: 'spoke2', name: 'AWS', type: 'Public Cloud' },
+            { id: 'spoke3', name: 'Azure', type: 'Public Cloud' },
+            { id: 'spoke4', name: 'GCP', type: 'Public Cloud' },
+            { id: 'spoke5', name: 'Edge Site 1', type: 'Edge' },
+            { id: 'spoke6', name: 'Edge Site 2', type: 'Edge' },
+        ];
+        
+        const PLAYER_COLORS = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500'];
+
+        // --- Game State ---
+        let gameState = {
+            players: [],
+            currentPlayerIndex: 0,
+            fleetDeck: [],
+            skillTokens: { 'SRE Team': 2, 'Network Engineer': 2 },
+            board: {}, // { spokeId: { ownerId: null, deployedApp: null }, ... }
+            actionsTaken: 0,
+            selectedCard: null,
+            isAwaitingTarget: false,
+            targetType: null,
+            targetCallback: null,
+        };
+
+        // --- Game Logic Functions ---
+
+        /**
+         * Shuffles an array in place.
+         * @param {Array} array The array to shuffle.
+         */
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        /**
+         * Creates the full fleet deck from the card definitions.
+         */
+        function createFleetDeck() {
+            const deck = [];
+            const cardTypes = ['CLUSTERS', 'ACTIONS', 'PROBLEMS', 'EVENTS'];
+            cardTypes.forEach(type => {
+                CARDS.FLEET[type].forEach(cardDef => {
+                    for (let i = 0; i < cardDef.count; i++) {
+                        deck.push({ ...cardDef, cardType: type.slice(0, -1).toLowerCase() });
+                    }
+                });
+            });
+            shuffle(deck);
+            return deck;
+        }
+
+        /**
+         * Sets up the game with the specified number of players.
+         * @param {number} numPlayers The number of players.
+         */
+        function setupGame(numPlayers) {
+            // Initialize players
+            const appCards = [...CARDS.APPLICATIONS];
+            shuffle(appCards);
+            for (let i = 0; i < numPlayers; i++) {
+                gameState.players.push({
+                    id: i,
+                    name: `Player ${i + 1}`,
+                    color: PLAYER_COLORS[i],
+                    vp: 0,
+                    cu: 5,
+                    hand: [],
+                    skillTokens: [],
+                    controlledClusters: [],
+                    deployedApps: [],
+                    location: 'hub', // 'hub' or spokeId
+                    applicationCard: appCards.pop(),
+                    governanceCard: CARDS.GOVERNANCE[0],
+                });
+            }
+
+            // Initialize board
+            BOARD_SPOKES.forEach(spoke => {
+                gameState.board[spoke.id] = { ownerId: null, deployedApp: null };
+            });
+
+            // Initialize deck
+            gameState.fleetDeck = createFleetDeck();
+
+            // Deal initial hands
+            gameState.players.forEach(player => {
+                for (let i = 0; i < 3; i++) {
+                    player.hand.push(gameState.fleetDeck.pop());
+                }
+            });
+
+            DOMElements.setupModal.classList.add('hidden');
+            logMessage('Game started! Player 1, it\'s your turn.');
+            renderAll();
+            startTurn();
+        }
+        
+        /**
+         * Starts the current player's turn.
+         */
+        function startTurn() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            gameState.actionsTaken = 0;
+            gameState.selectedCard = null;
+
+            // Phase 1: Resource Generation
+            let generatedCU = 2; // Base generation
+            player.controlledClusters.forEach(spokeId => {
+                const spokeType = BOARD_SPOKES.find(s => s.id === spokeId).type;
+                const clusterCard = CARDS.FLEET.CLUSTERS.find(c => c.type === spokeType);
+                generatedCU += clusterCard.generates;
+            });
+            player.deployedApps.forEach(appId => {
+                if (appId === 'app1') generatedCU += 1;
+            });
+            player.cu += generatedCU;
+            logMessage(`${player.name} started their turn and generated ${generatedCU} CUs.`);
+
+            // Phase 2: Draw
+            drawCard(player.id);
+            
+            renderAll();
+            updateActionButtons();
+        }
+        
+        /**
+         * Handles drawing a card, including event cards.
+         * @param {number} playerId The ID of the player drawing.
+         */
+        function drawCard(playerId) {
+            const player = gameState.players[playerId];
+            if (gameState.fleetDeck.length === 0) {
+                logMessage('The Fleet Deck is empty!');
+                return;
+            }
+
+            const card = gameState.fleetDeck.pop();
+            logMessage(`${player.name} drew a card.`);
+
+            if (card.cardType === 'event') {
+                showEventModal(card);
+                // After event modal is closed, another card is drawn.
+            } else {
+                player.hand.push(card);
+            }
+            renderAll();
+        }
+
+        /**
+         * Ends the current turn and moves to the next player.
+         */
+        function endTurn() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            
+            // Check governance
+            if(player.cu < 2 && player.hand.length > 0) {
+                logMessage(`${player.name} failed their Governance Policy and must discard a card.`);
+                // For simplicity, we'll just discard the first card. A real implementation might let the player choose.
+                const discarded = player.hand.shift();
+                logMessage(`${player.name} discarded ${discarded.name}.`);
+            }
+
+            // Check for win condition
+            if (player.vp >= 3) {
+                showWinModal(player);
+                return;
+            }
+
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            logMessage(`Turn ended. It's now ${gameState.players[gameState.currentPlayerIndex].name}'s turn.`);
+            startTurn();
+        }
+
+        /**
+         * Handles playing the selected card.
+         */
+        function handlePlayCard() {
+            if (!gameState.selectedCard || gameState.actionsTaken >= 2) return;
+
+            const player = gameState.players[gameState.currentPlayerIndex];
+            const card = gameState.selectedCard;
+
+            if (player.cu < card.cost) {
+                logMessage(`Not enough CUs to play ${card.name}.`);
+                return;
+            }
+
+            // Handle card-specific logic
+            switch (card.cardType) {
+                case 'cluster':
+                    handlePlayClusterCard(player, card);
+                    break;
+                case 'action':
+                    handlePlayActionCard(player, card);
+                    break;
+                // Problem cards are played out of turn, this button won't handle them.
+            }
+        }
+        
+        function handlePlayClusterCard(player, card) {
+            // Check requirements
+            if (card.requires) {
+                if (card.requires.type === 'skill' && !player.skillTokens.includes(card.requires.skill)) {
+                    logMessage(`You need a ${card.requires.skill} token to play this card.`);
+                    return;
+                }
+                if (card.requires.type === 'skillOrDiscard' && !player.skillTokens.includes(card.requires.skill) && player.hand.length <= 1) {
+                    logMessage(`You need a ${card.requires.skill} token or a card to discard.`);
+                    return;
+                }
+            }
+
+            const availableSpokes = BOARD_SPOKES.filter(spoke => spoke.type === card.type && gameState.board[spoke.id].ownerId === null);
+            if (availableSpokes.length === 0) {
+                logMessage(`No available ${card.type} spokes on the board.`);
+                return;
+            }
+
+            logMessage(`Select an available ${card.type} spoke to deploy your cluster.`);
+            gameState.isAwaitingTarget = true;
+            gameState.targetType = 'spoke';
+            gameState.targetCallback = (spokeId) => {
+                // Pay cost
+                player.cu -= card.cost;
+                if (card.requires?.type === 'skillOrDiscard' && !player.skillTokens.includes(card.requires.skill)) {
+                    const discarded = player.hand.find(c => c.id !== card.id); // discard another card
+                    player.hand = player.hand.filter(c => c.id !== discarded.id);
+                    logMessage(`${player.name} discarded ${discarded.name} to meet requirements.`);
+                }
+                
+                // Place cluster
+                gameState.board[spokeId].ownerId = player.id;
+                player.controlledClusters.push(spokeId);
+                
+                // Finalize
+                player.hand = player.hand.filter(c => c.id !== card.id);
+                logMessage(`${player.name} deployed a ${card.name} to ${BOARD_SPOKES.find(s=>s.id === spokeId).name}.`);
+                finishAction();
+            };
+            renderAll();
+        }
+        
+        function handlePlayActionCard(player, card) {
+            player.cu -= card.cost;
+            player.hand = player.hand.filter(c => c.id !== card.id);
+            logMessage(`${player.name} played ${card.name}.`);
+
+            switch(card.id) {
+                case 'a4': // Hire Specialist
+                    if (Object.values(gameState.skillTokens).reduce((a, b) => a + b, 0) > 0) {
+                        // Simple: give SRE if available, else Network Engineer
+                        if (gameState.skillTokens['SRE Team'] > 0) {
+                            player.skillTokens.push('SRE Team');
+                            gameState.skillTokens['SRE Team']--;
+                            logMessage(`${player.name} hired an SRE Team.`);
+                        } else {
+                            player.skillTokens.push('Network Engineer');
+                            gameState.skillTokens['Network Engineer']--;
+                            logMessage(`${player.name} hired a Network Engineer.`);
+                        }
+                    } else {
+                        logMessage('No specialists available to hire.');
+                    }
+                    break;
+                case 'a6': // Scale Up
+                    player.cu += 3;
+                    logMessage(`${player.name} gained 3 CUs.`);
+                    break;
+                // Other action cards would need similar logic, possibly with targeting
+                default:
+                    logMessage(`Action card ${card.name} effect not fully implemented.`);
+            }
+            finishAction();
+        }
+        
+        function handleDeployApp() {
+            if (gameState.actionsTaken >= 2) return;
+            const player = gameState.players[gameState.currentPlayerIndex];
+            if (player.cu < 3) {
+                logMessage('Not enough CUs to deploy application.');
+                return;
+            }
+
+            const app = player.applicationCard;
+            const validSpokes = player.controlledClusters.filter(spokeId => {
+                const spokeType = BOARD_SPOKES.find(s => s.id === spokeId).type;
+                return (app.requirement === 'any' || app.requirement === spokeType) && !gameState.board[spokeId].deployedApp;
+            });
+
+            if (validSpokes.length === 0) {
+                logMessage(`No valid clusters available to deploy ${app.name}.`);
+                return;
+            }
+
+            logMessage(`Select a valid cluster to deploy your application.`);
+            gameState.isAwaitingTarget = true;
+            gameState.targetType = 'owned-spoke';
+            gameState.targetCallback = (spokeId) => {
+                player.cu -= 3;
+                gameState.board[spokeId].deployedApp = app.id;
+                player.deployedApps.push(app.id);
+                player.vp += app.vp;
+                logMessage(`${player.name} deployed ${app.name} and gained 1 VP!`);
+                finishAction();
+            };
+            renderAll();
+        }
+
+        function finishAction() {
+            gameState.actionsTaken++;
+            gameState.selectedCard = null;
+            gameState.isAwaitingTarget = false;
+            gameState.targetType = null;
+            gameState.targetCallback = null;
+            renderAll();
+            updateActionButtons();
+        }
+
+        // --- Rendering Functions ---
+
+        /**
+         * Renders the entire game state.
+         */
+        function renderAll() {
+            renderPlayersPanel();
+            renderBoard();
+            renderHand();
+            renderDeckAndTokens();
+            updateActionButtons();
+        }
+
+        function renderPlayersPanel() {
+            DOMElements.playersPanel.innerHTML = '';
+            gameState.players.forEach(player => {
+                const isCurrent = player.id === gameState.currentPlayerIndex;
+                const playerEl = document.createElement('div');
+                playerEl.className = `p-3 rounded-lg border-2 ${isCurrent ? 'bg-blue-900/50 border-blue-400' : 'bg-gray-700/50 border-gray-600'}`;
+                playerEl.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <h4 class="text-lg font-bold ${player.color.replace('bg-', 'text-')}">${player.name}</h4>
+                        <div class="flex gap-2 items-center">
+                            <span class="font-bold text-yellow-400">${player.vp} VP</span>
+                            <span class="font-bold text-green-400">${player.cu} CU</span>
+                        </div>
+                    </div>
+                    <p class="text-sm text-gray-400">Hand: ${player.hand.length}</p>
+                    <p class="text-sm text-gray-400">Clusters: ${player.controlledClusters.length}</p>
+                    <div class="flex gap-1 mt-2">
+                        ${player.skillTokens.map(token => `<span class="text-xs bg-gray-600 px-2 py-1 rounded-full">${token}</span>`).join('')}
+                    </div>
+                    <div class="mt-2 p-2 bg-gray-800 rounded">
+                        <p class="text-xs font-semibold">${player.applicationCard.name}</p>
+                        <p class="text-xs text-gray-400">${player.applicationCard.requirement !== 'any' ? `Deploys to: ${player.applicationCard.requirement}` : 'Deploys anywhere'}</p>
+                    </div>
+                `;
+                DOMElements.playersPanel.appendChild(playerEl);
+            });
+        }
+
+        function renderBoard() {
+            const boardContainer = DOMElements.gameBoard;
+            boardContainer.innerHTML = DOMElements.hub.outerHTML; // Keep hub
+            const hubEl = boardContainer.querySelector('#hub');
+            const hubPawnsEl = hubEl.querySelector('#hub-pawns');
+            hubPawnsEl.innerHTML = '';
+
+            const radius = Math.min(boardContainer.clientWidth, boardContainer.clientHeight) / 2.5;
+            const centerX = boardContainer.clientWidth / 2;
+            const centerY = boardContainer.clientHeight / 2;
+
+            BOARD_SPOKES.forEach((spoke, index) => {
+                const angle = (index / BOARD_SPOKES.length) * 2 * Math.PI - (Math.PI / 2);
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+
+                const spokeEl = document.createElement('div');
+                spokeEl.id = spoke.id;
+                spokeEl.className = 'board-spoke absolute -translate-x-1/2 -translate-y-1/2 w-40 h-28 bg-gray-700/50 rounded-lg flex flex-col items-center justify-center border-2 border-gray-600 p-2 text-center transition-colors';
+                spokeEl.style.left = `${x}px`;
+                spokeEl.style.top = `${y}px`;
+
+                const owner = gameState.board[spoke.id].ownerId;
+                const ownerColor = owner !== null ? gameState.players[owner].color : '';
+                
+                let isAvailable = false;
+                if (gameState.isAwaitingTarget && gameState.targetType === 'spoke') {
+                    const card = gameState.selectedCard;
+                    if (card && card.cardType === 'cluster' && card.type === spoke.type && owner === null) {
+                        isAvailable = true;
+                    }
+                }
+                if (gameState.isAwaitingTarget && gameState.targetType === 'owned-spoke') {
+                    const player = gameState.players[gameState.currentPlayerIndex];
+                    if (player.controlledClusters.includes(spoke.id) && !gameState.board[spoke.id].deployedApp) {
+                        isAvailable = true;
+                    }
+                }
+                if (isAvailable) {
+                    spokeEl.classList.add('available');
+                    spokeEl.onclick = () => {
+                        if (gameState.isAwaitingTarget && gameState.targetCallback) {
+                            gameState.targetCallback(spoke.id);
+                        }
+                    };
+                }
+
+                spokeEl.innerHTML = `
+                    <h5 class="font-semibold text-sm">${spoke.name}</h5>
+                    <p class="text-xs text-gray-400">${spoke.type}</p>
+                    <div class="absolute bottom-1 right-1 flex gap-1">
+                        ${gameState.players.filter(p => p.location === spoke.id).map(p => `<div class="cluster-pawn w-4 h-4 rounded-full ${p.color} border-2 border-white"></div>`).join('')}
+                    </div>
+                    ${owner !== null ? `<div class="absolute top-1 left-1 w-4 h-4 rounded-full ${ownerColor} border-2 border-white" title="${gameState.players[owner].name}'s cluster"></div>` : ''}
+                    ${gameState.board[spoke.id].deployedApp ? `<div class="absolute top-1 right-1 text-yellow-400" title="App Deployed">⭐</div>` : ''}
+                `;
+                boardContainer.appendChild(spokeEl);
+            });
+
+            // Render pawns in hub
+            gameState.players.filter(p => p.location === 'hub').forEach(p => {
+                const pawnEl = document.createElement('div');
+                pawnEl.className = `w-6 h-6 rounded-full ${p.color} border-2 border-white shadow-md`;
+                pawnEl.title = p.name;
+                hubPawnsEl.appendChild(pawnEl);
+            });
+        }
+        
+        function renderHand() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            DOMElements.playerHand.innerHTML = '';
+            player.hand.forEach(card => {
+                const cardEl = document.createElement('div');
+                let borderColor = 'border-gray-600';
+                if (card.cardType === 'cluster') borderColor = 'border-blue-500';
+                if (card.cardType === 'action') borderColor = 'border-green-500';
+                if (card.cardType === 'problem') borderColor = 'border-red-500';
+
+                cardEl.className = `card bg-gray-800 p-2 rounded-lg border-2 ${borderColor} cursor-pointer`;
+                if (gameState.selectedCard && gameState.selectedCard.id === card.id) {
+                    cardEl.classList.add('selected');
+                }
+                cardEl.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <p class="font-bold text-sm">${card.name}</p>
+                        ${card.cost !== undefined ? `<p class="font-bold text-sm text-green-400">${card.cost} CU</p>` : ''}
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">${card.text}</p>
+                `;
+                cardEl.onclick = () => {
+                    if (gameState.isAwaitingTarget) return;
+                    gameState.selectedCard = card;
+                    renderHand();
+                    updateActionButtons();
+                };
+                DOMElements.playerHand.appendChild(cardEl);
+            });
+        }
+        
+        function renderDeckAndTokens() {
+            DOMElements.deckCount.textContent = `${gameState.fleetDeck.length} cards left`;
+            DOMElements.skillTokensSupply.innerHTML = `
+                <div class="text-xs bg-gray-600 px-2 py-1 rounded-full">SRE: ${gameState.skillTokens['SRE Team']}</div>
+                <div class="text-xs bg-gray-600 px-2 py-1 rounded-full">NetEng: ${gameState.skillTokens['Network Engineer']}</div>
+            `;
+        }
+
+        function updateActionButtons() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            const canAct = gameState.actionsTaken < 2 && !gameState.isAwaitingTarget;
+            
+            DOMElements.playCardBtn.disabled = !canAct || !gameState.selectedCard || player.cu < gameState.selectedCard.cost;
+            DOMElements.deployAppBtn.disabled = !canAct || player.cu < 3;
+            DOMElements.movePawnBtn.disabled = !canAct || player.cu < 1;
+            DOMElements.discardDrawBtn.disabled = !canAct;
+            DOMElements.endTurnBtn.disabled = gameState.isAwaitingTarget;
+        }
+
+        function logMessage(message) {
+            const msgEl = document.createElement('p');
+            msgEl.className = 'log-message text-sm text-gray-300 mb-1';
+            msgEl.textContent = `> ${message}`;
+            DOMElements.messageLog.appendChild(msgEl);
+            DOMElements.messageLog.scrollTop = DOMElements.messageLog.scrollHeight;
+        }
+
+        // --- Modal Functions ---
+        function showEventModal(card) {
+            DOMElements.eventTitle.textContent = card.name;
+            DOMElements.eventText.textContent = card.text;
+            DOMElements.eventModal.classList.remove('hidden');
+
+            // Apply event effect
+            logMessage(`EVENT: ${card.name}!`);
+            switch(card.id) {
+                case 'e1': // Major Cloud Outage
+                    gameState.players.forEach(p => {
+                        const clustersToDestroy = p.controlledClusters.filter(spokeId => BOARD_SPOKES.find(s=>s.id === spokeId).type === 'Public Cloud');
+                        clustersToDestroy.forEach(spokeId => {
+                            gameState.board[spokeId].ownerId = null;
+                            gameState.board[spokeId].deployedApp = null;
+                        });
+                        p.controlledClusters = p.controlledClusters.filter(spokeId => !clustersToDestroy.includes(spokeId));
+                    });
+                    logMessage('All Public Cloud clusters have been destroyed!');
+                    break;
+                case 'e2': // Zero-Day Exploit
+                    gameState.players.forEach(p => {
+                        const cost = p.controlledClusters.length;
+                        if (p.cu >= cost) {
+                            p.cu -= cost;
+                            logMessage(`${p.name} paid ${cost} CU to secure their clusters.`);
+                        } else {
+                            logMessage(`${p.name} couldn't afford to secure clusters, they are all destroyed!`);
+                            p.controlledClusters.forEach(spokeId => {
+                                gameState.board[spokeId].ownerId = null;
+                                gameState.board[spokeId].deployedApp = null;
+                            });
+                            p.controlledClusters = [];
+                        }
+                    });
+                    break;
+                case 'e3': // Budget Surplus
+                    gameState.players.forEach(p => p.cu += 2);
+                    logMessage('All players received a budget surplus of 2 CUs!');
+                    break;
+            }
+        }
+
+        function closeEventModal() {
+            DOMElements.eventModal.classList.add('hidden');
+            // Draw replacement card
+            const player = gameState.players[gameState.currentPlayerIndex];
+            logMessage(`${player.name} draws a replacement card after the event.`);
+            drawCard(player.id);
+            renderAll();
+        }
+
+        function showWinModal(player) {
+            DOMElements.winnerName.textContent = `${player.name} wins!`;
+            DOMElements.winModal.classList.remove('hidden');
+        }
+        
+        // --- Event Listeners ---
+        DOMElements.playCardBtn.addEventListener('click', handlePlayCard);
+        DOMElements.deployAppBtn.addEventListener('click', handleDeployApp);
+        DOMElements.endTurnBtn.addEventListener('click', endTurn);
+        // More complex actions like move and discard/draw would need their own handlers
+        
+    </script>
+</body>
+</html>
